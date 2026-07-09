@@ -4,39 +4,106 @@
   <meta charset="utf-8" />
   <title>Fleet Radar</title>
   <style>
+    /* Workspacer injects its theme as --wks-* custom properties; the fallbacks
+       keep the radar legible when opened standalone. */
     :root { color-scheme: dark; }
     * { box-sizing: border-box; }
+    html, body { height: 100%; }
     body { margin: 0; font-family: system-ui, sans-serif;
-           background: var(--wks-bg-base, #161616); color: var(--wks-text-primary, #e8e8e8); }
-    header { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-             border-bottom: 1px solid var(--wks-border-subtle, #2a2a2a); }
-    header h1 { font-size: 0.95rem; margin: 0; font-weight: 600; }
-    #conn { font-size: 0.65rem; color: var(--wks-text-muted, #888); display: flex; align-items: center; gap: 5px; margin-left: auto; }
+           background: var(--wks-bg-base, #141414); color: var(--wks-text-primary, #e8e8e8);
+           display: flex; flex-direction: column; }
+
+    header { display: flex; align-items: center; gap: 14px; padding: 12px 18px;
+             border-bottom: 1px solid var(--wks-border-subtle, #2a2a2a); flex-shrink: 0; }
+    header h1 { font-size: 1rem; margin: 0; font-weight: 600; letter-spacing: 0.2px; }
+    .stats { display: flex; gap: 16px; align-items: center; margin-left: 4px; }
+    .stat { font-size: 0.7rem; color: var(--wks-text-muted, #999); display: flex; align-items: center; gap: 5px; }
+    .stat b { font-size: 0.9rem; font-weight: 700; color: var(--wks-text-primary, #eee); font-variant-numeric: tabular-nums; }
+    .stat.attention { color: var(--wks-warning, #e0a000); }
+    .stat.attention b { color: var(--wks-warning, #e0a000); }
+    .stat.attention.pulse b { animation: pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+    #conn { font-size: 0.65rem; color: var(--wks-text-muted, #888); display: flex; align-items: center; gap: 6px; margin-left: auto; }
     #conn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--wks-text-faint, #666); }
-    #conn.on .dot { background: var(--wks-success, #3fb950); box-shadow: 0 0 5px var(--wks-success, #3fb950); }
-    #log { font-size: 0.66rem; color: var(--wks-text-tertiary, #aaa); padding: 12px 14px;
-           font-family: ui-monospace, monospace; white-space: pre-wrap; }
-    .hint { padding: 10px 14px; color: var(--wks-text-faint, #777); font-size: 0.72rem; }
+    #conn.on .dot { background: var(--wks-success, #3fb950); box-shadow: 0 0 6px var(--wks-success, #3fb950); }
+
+    #scroll { flex: 1; overflow: auto; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 14px; padding: 18px; }
+
+    .card { position: relative; background: var(--wks-bg-raised, #1d1d1d);
+            border: 1px solid var(--wks-border-subtle, #2a2a2a); border-radius: 10px;
+            padding: 13px 14px; cursor: pointer;
+            transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease; }
+    .card:hover { transform: translateY(-2px); border-color: var(--wks-border-strong, #3a3a3a);
+                  box-shadow: 0 4px 14px rgba(0,0,0,0.35); }
+    /* "Needs you" — glowing warning ring so it pops on a big screen. */
+    .card.attention { border-color: var(--wks-warning, #e0a000);
+                      box-shadow: 0 0 0 1px var(--wks-warning, #e0a000), 0 0 16px -4px var(--wks-warning, #e0a000); }
+    .card.attention::before { content: attr(data-badge); position: absolute; top: -9px; right: 12px;
+                      font-size: 0.55rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+                      background: var(--wks-warning, #e0a000); color: #1a1200;
+                      padding: 2px 7px; border-radius: 20px; }
+
+    .top { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+    .top .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .top .name { font-size: 0.82rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .top .state { margin-left: auto; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.4px;
+                  color: var(--wks-text-muted, #999); white-space: nowrap; flex-shrink: 0; }
+    .cwd { font-size: 0.6rem; color: var(--wks-text-faint, #777); margin-bottom: 10px;
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+
+    .bar { height: 5px; border-radius: 3px; background: var(--wks-bg-hover, #2a2a2a); overflow: hidden; margin-bottom: 7px; }
+    .bar > span { display: block; height: 100%; border-radius: 3px; transition: width 0.3s ease; }
+
+    .meta { display: flex; align-items: center; gap: 8px; font-size: 0.62rem;
+            color: var(--wks-text-tertiary, #aaa); font-variant-numeric: tabular-nums; }
+    .meta .model { font-weight: 600; color: var(--wks-text-secondary, #cbcbcb);
+                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .meta .ctx { margin-left: auto; white-space: nowrap; }
+    .meta .cost { white-space: nowrap; color: var(--wks-text-muted, #9a9a9a); }
+
+    .empty { display: flex; flex-direction: column; align-items: center; justify-content: center;
+             height: 100%; gap: 10px; text-align: center; color: var(--wks-text-faint, #777); padding: 40px; }
+    .empty .ping { font-size: 2.4rem; opacity: 0.6; animation: pulse 2.2s ease-in-out infinite; }
+    .empty .t { font-size: 0.95rem; color: var(--wks-text-muted, #999); }
+    .empty .s { font-size: 0.75rem; }
   </style>
 </head>
 <body>
   <header>
     <h1>📡 Fleet Radar</h1>
+    <div class="stats">
+      <span class="stat"><b id="sTotal">0</b> agents</span>
+      <span class="stat" id="attentionStat" style="display:none"><b id="sAttn">0</b> need you</span>
+      <span class="stat"><b id="sCost">$0.00</b></span>
+    </div>
     <div id="conn"><span class="dot"></span><span id="ct">connecting…</span></div>
   </header>
-  <div class="hint">Scaffold — subscribes to <code>agent.snapshot, agent.state_changed, workflow.*</code>. Edit <code>ui/index.html</code> to render your view.</div>
-  <div id="log"></div>
+
+  <div id="scroll">
+    <div id="grid" class="grid" style="display:none"></div>
+    <div id="empty" class="empty">
+      <div class="ping">📡</div>
+      <div class="t">No agents on the radar</div>
+      <div class="s">Spawn an agent in workspacer and it will appear here.</div>
+    </div>
+  </div>
+
   <script>
     // Bus-native webview: the host injects this plugin's scoped token as
     // ?busToken=… in our URL; present it so the hub scopes us to our manifest.
     const BUS_TOKEN = new URLSearchParams(location.search).get('busToken') || '';
     const BUS = 'ws://127.0.0.1:7895/bus' + (BUS_TOKEN ? '?token=' + encodeURIComponent(BUS_TOKEN) : '');
-    const TOPICS = ["agent.snapshot", "agent.state_changed", "workflow.*"];
+    const TOPICS = ['agent.snapshot', 'agent.state_changed', 'workflow.*'];
     let ws, connected = false, callSeq = 0;
     const pending = new Map();
-    const lines = [];
+    let agents = [];
+    let refreshTimer = null;
+
     const $ = (id) => document.getElementById(id);
-    function log(m) { lines.unshift(new Date().toLocaleTimeString() + '  ' + m); if (lines.length > 200) lines.pop(); $('log').textContent = lines.join('\n'); }
+
     function call(method, params) {
       return new Promise((resolve, reject) => {
         if (!connected) return reject(new Error('not connected'));
@@ -45,24 +112,121 @@
         setTimeout(() => { if (pending.has(id)) { pending.delete(id); reject(new Error('timeout')); } }, 8000);
       });
     }
-    function publish(type, data) { if (connected) ws.send(JSON.stringify({ op: 'publish', event: { type, source: 'djtouchette.fleet-radar', data: data || {} } })); }
-    function setConn(on) { connected = on; $('conn').classList.toggle('on', on); $('ct').textContent = on ? 'connected' : 'disconnected'; }
+    function publish(type, data) {
+      if (connected) ws.send(JSON.stringify({ op: 'publish', event: { type, source: 'djtouchette.fleet-radar', data: data || {} } }));
+    }
+    function setConn(on) { connected = on; $('conn').classList.toggle('on', on); $('ct').textContent = on ? 'live' : 'reconnecting…'; }
+
+    // Any subscribed event nudges a single debounced roster refresh (~150ms),
+    // so a burst of events collapses into one agents.list call + one re-render.
+    function scheduleRefresh() {
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(async () => {
+        refreshTimer = null;
+        try {
+          const list = await call('agents.list');
+          agents = Array.isArray(list) ? list : [];
+          render();
+        } catch (e) { /* stay on last-known roster; next event retries */ }
+      }, 150);
+    }
+
+    const NEEDS_YOU = new Set(['waiting_approval', 'waiting_input']);
+    function needsYou(a) { return NEEDS_YOU.has(a.state) || !!a.pendingApproval || (Array.isArray(a.pendingQuestions) && a.pendingQuestions.length > 0); }
+
+    // var() resolves inside inline styles, so colors track the injected theme.
+    function stateColor(s) {
+      if (s === 'waiting_approval' || s === 'waiting_input') return 'var(--wks-warning, #e0a000)';
+      if (s === 'thinking' || s === 'streaming') return 'var(--wks-accent-text, #4a9eff)';
+      if (s === 'idle') return 'var(--wks-success, #3fb950)';
+      return 'var(--wks-text-faint, #666)';
+    }
+    function stateLabel(s) {
+      return ({ waiting_approval: 'needs approval', waiting_input: 'needs input',
+                thinking: 'thinking', streaming: 'responding', idle: 'idle' })[s] || (s || 'unknown');
+    }
+    function ctxColor(f) {
+      return f >= 0.9 ? 'var(--wks-error, #e05555)'
+        : f >= 0.7 ? 'var(--wks-warning, #e0a000)'
+        : 'var(--wks-accent-text, #4a9eff)';
+    }
+    function fmtTok(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : '' + (n || 0); }
+    function agentName(a) {
+      const base = (a.cwd || '').replace(/[/\\]+$/, '').split(/[/\\]/).pop();
+      return base || (a.sessionId ? a.sessionId.slice(0, 8) : 'agent');
+    }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+    function render() {
+      // Attention first, then noisiest-context, so the big screen reads top-down.
+      const sorted = agents.slice().sort((a, b) => {
+        const na = needsYou(a) ? 1 : 0, nb = needsYou(b) ? 1 : 0;
+        if (na !== nb) return nb - na;
+        const fa = a.contextLimit ? a.contextTokens / a.contextLimit : 0;
+        const fb = b.contextLimit ? b.contextTokens / b.contextLimit : 0;
+        return fb - fa;
+      });
+
+      const attn = agents.filter(needsYou).length;
+      const cost = agents.reduce((s, a) => s + (a.costUSD || 0), 0);
+      $('sTotal').textContent = agents.length;
+      $('sCost').textContent = '$' + cost.toFixed(2);
+      $('sAttn').textContent = attn;
+      const attnStat = $('attentionStat');
+      attnStat.style.display = attn ? 'flex' : 'none';
+      attnStat.classList.toggle('attention', true);
+      attnStat.classList.toggle('pulse', attn > 0);
+
+      const grid = $('grid');
+      const hasAgents = agents.length > 0;
+      $('empty').style.display = hasAgents ? 'none' : 'flex';
+      grid.style.display = hasAgents ? 'grid' : 'none';
+      grid.innerHTML = '';
+
+      for (const a of sorted) {
+        const frac = a.contextLimit ? Math.min(1, a.contextTokens / a.contextLimit) : 0;
+        const attnCard = needsYou(a);
+        const card = document.createElement('div');
+        card.className = 'card' + (attnCard ? ' attention' : '');
+        if (attnCard) card.setAttribute('data-badge', a.pendingApproval || a.state === 'waiting_approval' ? 'approve' : 'needs you');
+        card.title = 'Focus this agent in workspacer';
+        const model = (a.model || '').replace(/^claude-/, '').replace(/-\d{8}$/, '');
+        card.innerHTML = `
+          <div class="top">
+            <span class="dot" style="background:${stateColor(a.state)};box-shadow:0 0 6px ${stateColor(a.state)}"></span>
+            <span class="name">${esc(agentName(a))}</span>
+            <span class="state">${esc(stateLabel(a.state))}</span>
+          </div>
+          <div class="cwd">${esc(a.cwd || '—')}</div>
+          <div class="bar"><span style="width:${Math.max(2, frac * 100)}%;background:${ctxColor(frac)}"></span></div>
+          <div class="meta">
+            <span class="model">${esc(model || '—')}</span>
+            <span class="ctx">${a.contextTokens ? fmtTok(a.contextTokens) + ' / ' + fmtTok(a.contextLimit) : '—'}</span>
+            <span class="cost">${a.costUSD ? '$' + a.costUSD.toFixed(2) : '$0.00'}</span>
+          </div>`;
+        card.onclick = () => {
+          if (!a.sessionId) return;
+          publish('command.focus_agent', { sessionId: a.sessionId });
+        };
+        grid.appendChild(card);
+      }
+    }
+
     function connect() {
       ws = new WebSocket(BUS);
-      ws.onopen = () => { setConn(true); if (TOPICS.length) ws.send(JSON.stringify({ op: 'subscribe', topics: TOPICS })); log('connected; subscribed to ' + (TOPICS.join(', ') || '(nothing)')); };
+      ws.onopen = () => {
+        setConn(true);
+        ws.send(JSON.stringify({ op: 'subscribe', topics: TOPICS }));
+        scheduleRefresh(); // seed the roster immediately on (re)connect
+      };
       ws.onmessage = (e) => {
         let f; try { f = JSON.parse(e.data); } catch { return; }
-        if (f.op === 'event' && f.event) { onEvent(f.event); }
+        if (f.op === 'event' && f.event) { scheduleRefresh(); }
         else if (f.op === 'result' && pending.has(f.id)) { pending.get(f.id).resolve(f.result); pending.delete(f.id); }
         else if (f.op === 'error' && pending.has(f.id)) { pending.get(f.id).reject(new Error(f.error)); pending.delete(f.id); }
       };
       ws.onclose = () => { setConn(false); setTimeout(connect, 1000); };
       ws.onerror = () => { try { ws.close(); } catch {} };
-    }
-    // ── Your view logic ──────────────────────────────────────────────────────
-    function onEvent(event) {
-      log(event.type + '  ' + JSON.stringify(event.data || {}).slice(0, 120));
-      // TODO: render your dashboard from these events. call('agents.list') etc.
     }
     connect();
   </script>
