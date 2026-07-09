@@ -1,0 +1,32 @@
+{
+  "id": "djtouchette.fleet-radar",
+  "name": "Fleet Radar",
+  "apiVersion": "1",
+  "ui": "ui",
+  "panes": [
+    {
+      "type": "djtouchette.fleet-radar",
+      "title": "Fleet Radar",
+      "icon": "\ud83d\udce1",
+      "scope": "global"
+    }
+  ],
+  "hotkeys": [
+    {
+      "id": "open-fleet-radar",
+      "default": "ctrl+shift+r",
+      "command": "open-pane:djtouchette.fleet-radar"
+    }
+  ],
+  "capabilities": [
+    "agents.list"
+  ],
+  "emits": [
+    "command.focus_agent"
+  ],
+  "consumes": [
+    "agent.snapshot",
+    "agent.state_changed",
+    "workflow.*"
+  ]
+}

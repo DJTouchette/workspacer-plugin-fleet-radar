@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Fleet Radar</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif;
+           background: var(--wks-bg-base, #161616); color: var(--wks-text-primary, #e8e8e8); }
+    header { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+             border-bottom: 1px solid var(--wks-border-subtle, #2a2a2a); }
+    header h1 { font-size: 0.95rem; margin: 0; font-weight: 600; }
+    #conn { font-size: 0.65rem; color: var(--wks-text-muted, #888); display: flex; align-items: center; gap: 5px; margin-left: auto; }
+    #conn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--wks-text-faint, #666); }
+    #conn.on .dot { background: var(--wks-success, #3fb950); box-shadow: 0 0 5px var(--wks-success, #3fb950); }
+    #log { font-size: 0.66rem; color: var(--wks-text-tertiary, #aaa); padding: 12px 14px;
+           font-family: ui-monospace, monospace; white-space: pre-wrap; }
+    .hint { padding: 10px 14px; color: var(--wks-text-faint, #777); font-size: 0.72rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📡 Fleet Radar</h1>
+    <div id="conn"><span class="dot"></span><span id="ct">connecting…</span></div>
+  </header>
+  <div class="hint">Scaffold — subscribes to <code>agent.snapshot, agent.state_changed, workflow.*</code>. Edit <code>ui/index.html</code> to render your view.</div>
+  <div id="log"></div>
+  <script>
+    // Bus-native webview: the host injects this plugin's scoped token as
+    // ?busToken=… in our URL; present it so the hub scopes us to our manifest.
+    const BUS_TOKEN = new URLSearchParams(location.search).get('busToken') || '';
+    const BUS = 'ws://127.0.0.1:7895/bus' + (BUS_TOKEN ? '?token=' + encodeURIComponent(BUS_TOKEN) : '');
+    const TOPICS = ["agent.snapshot", "agent.state_changed", "workflow.*"];
+    let ws, connected = false, callSeq = 0;
+    const pending = new Map();
+    const lines = [];
+    const $ = (id) => document.getElementById(id);
+    function log(m) { lines.unshift(new Date().toLocaleTimeString() + '  ' + m); if (lines.length > 200) lines.pop(); $('log').textContent = lines.join('\n'); }
+    function call(method, params) {
+      return new Promise((resolve, reject) => {
+        if (!connected) return reject(new Error('not connected'));
+        const id = 'c' + (++callSeq); pending.set(id, { resolve, reject });
+        ws.send(JSON.stringify({ op: 'call', id, method, params: params || {} }));
+        setTimeout(() => { if (pending.has(id)) { pending.delete(id); reject(new Error('timeout')); } }, 8000);
+      });
+    }
+    function publish(type, data) { if (connected) ws.send(JSON.stringify({ op: 'publish', event: { type, source: 'djtouchette.fleet-radar', data: data || {} } })); }
+    function setConn(on) { connected = on; $('conn').classList.toggle('on', on); $('ct').textContent = on ? 'connected' : 'disconnected'; }
+    function connect() {
+      ws = new WebSocket(BUS);
+      ws.onopen = () => { setConn(true); if (TOPICS.length) ws.send(JSON.stringify({ op: 'subscribe', topics: TOPICS })); log('connected; subscribed to ' + (TOPICS.join(', ') || '(nothing)')); };
+      ws.onmessage = (e) => {
+        let f; try { f = JSON.parse(e.data); } catch { return; }
+        if (f.op === 'event' && f.event) { onEvent(f.event); }
+        else if (f.op === 'result' && pending.has(f.id)) { pending.get(f.id).resolve(f.result); pending.delete(f.id); }
+        else if (f.op === 'error' && pending.has(f.id)) { pending.get(f.id).reject(new Error(f.error)); pending.delete(f.id); }
+      };
+      ws.onclose = () => { setConn(false); setTimeout(connect, 1000); };
+      ws.onerror = () => { try { ws.close(); } catch {} };
+    }
+    // ── Your view logic ──────────────────────────────────────────────────────
+    function onEvent(event) {
+      log(event.type + '  ' + JSON.stringify(event.data || {}).slice(0, 120));
+      // TODO: render your dashboard from these events. call('agents.list') etc.
+    }
+    connect();
+  </script>
+</body>
+</html>
