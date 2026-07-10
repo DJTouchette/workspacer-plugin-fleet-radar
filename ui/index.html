@@ -95,7 +95,13 @@
     // Bus-native webview: the host injects this plugin's scoped token as
     // ?busToken=… in our URL; present it so the hub scopes us to our manifest.
     const BUS_TOKEN = new URLSearchParams(location.search).get('busToken') || '';
-    const BUS = 'ws://127.0.0.1:7895/bus' + (BUS_TOKEN ? '?token=' + encodeURIComponent(BUS_TOKEN) : '');
+    // The hub serves this page (desktop webview or remote browser), so its own
+    // origin is the bus origin — hardcoding 127.0.0.1:7895 would break remote
+    // access and non-default ports. Fall back to the default only off-http.
+    const BUS_BASE = location.protocol.startsWith('http')
+      ? (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/bus'
+      : 'ws://127.0.0.1:7895/bus';
+    const BUS = BUS_BASE + (BUS_TOKEN ? '?token=' + encodeURIComponent(BUS_TOKEN) : '');
     const TOPICS = ['agent.snapshot', 'agent.state_changed', 'workflow.*'];
     let ws, connected = false, callSeq = 0;
     const pending = new Map();
