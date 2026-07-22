@@ -2,6 +2,7 @@
   "id": "djtouchette.fleet-radar",
   "name": "Fleet Radar",
   "apiVersion": "1",
+  "version": "1.0.0",
   "ui": "ui",
   "panes": [
     {
